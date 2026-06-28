@@ -1,9 +1,9 @@
 import os
 import time
-import psycopg2
+import psycopg2 # type: ignore
 
 try:
-    import redis
+    import redis # type: ignore
 except ImportError:
     redis = None
 

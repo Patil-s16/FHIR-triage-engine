@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI # type: ignore
 from database import get_postgres_connection, get_redis_connection
 
 app = FastAPI(title="FHIR Triage Core API Engine")
@@ -31,6 +31,7 @@ async def startup_event():
     # Automatically execute database verification when the app turns on
     initialize_database_schemas()
 
+# --- MAKE SURE THIS EXACT BLOCK BELOW IS IN YOUR FILE ---
 @app.get("/api/v1/debug/databases")
 def test_database_health():
     """An API path to verify both storage buckets are alive and responsive."""
