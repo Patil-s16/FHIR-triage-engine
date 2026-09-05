@@ -8,31 +8,32 @@ CREATE TABLE IF NOT EXISTS patients (
     admission_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table 2: Historical Telemetry Records (For long-term clinical charts)
+-- Table 2: Historical Telemetry Records (For long-term clinical charts & FHIR storage)
 CREATE TABLE IF NOT EXISTS vitals_history (
     record_id SERIAL PRIMARY KEY,
-    patient_id VARCHAR(50) REFERENCES patients(patient_id) ON DELETE CASCADE,
-    timestamp TIMESTAMP NOT NULL,
+    patient_id VARCHAR(50),
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     heart_rate INT NOT NULL,
     systolic_bp INT NOT NULL,
     diastolic_bp INT NOT NULL,
     spo2 INT NOT NULL,
     triage_score INT NOT NULL,
-    status VARCHAR(20) NOT NULL
+    status VARCHAR(50) NOT NULL,
+    fhir_data JSONB
 );
 
 -- Let's populate the registry with 3 sample patient beds for testing
 INSERT INTO patients (patient_id, full_name, bed_number) 
 VALUES 
-('PT-001', 'Alice Smith', 'ICU-A1')
+('BED-001', 'Alice Smith', 'ICU-A1')
 ON CONFLICT (patient_id) DO NOTHING;
 
 INSERT INTO patients (patient_id, full_name, bed_number) 
 VALUES 
-('PT-002', 'Bob Jones', 'ICU-A2')
+('BED-002', 'Bob Jones', 'ICU-A2')
 ON CONFLICT (patient_id) DO NOTHING;
 
 INSERT INTO patients (patient_id, full_name, bed_number) 
 VALUES 
-('PT-003', 'Charlie Brown', 'ER-04')
+('BED-003', 'Charlie Brown', 'ER-04')
 ON CONFLICT (patient_id) DO NOTHING;
