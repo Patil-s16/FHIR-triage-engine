@@ -25,7 +25,7 @@ def get_redis_connection():
         r.ping()
         return r
     except redis.ConnectionError:
-        print("❌ CRITICAL ERROR: Could not connect to Redis Cache!")
+        print(" CRITICAL ERROR: Could not connect to Redis Cache!")
         return None
 
 # --- BUCKET B CONNECTOR: POSTGRESQL PERMANENT STORAGE ---
@@ -40,5 +40,5 @@ def get_postgres_connection():
         )
         return conn
     except Exception as e:
-        print(f"❌ CRITICAL ERROR: Could not connect to PostgreSQL Database! Details: {e}")
+        print(f" CRITICAL ERROR: Could not connect to PostgreSQL Database! Details: {e}")
         return None
