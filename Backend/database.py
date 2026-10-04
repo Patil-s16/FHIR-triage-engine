@@ -16,29 +16,24 @@ DB_PASS = os.getenv("POSTGRES_PASSWORD", "SecureHospitalNetwork2026!")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-# --- BUCKET A CONNECTOR: REDIS LIVE MEMORY ---
-def get_redis_connection():
-    """Establishes a high-velocity link to the Redis live cache cluster."""
-    try:
-        r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-        # Ping check to confirm it is alive
-        r.ping()
-        return r
-    except redis.ConnectionError:
-        print(" CRITICAL ERROR: Could not connect to Redis Cache!")
-        return None
-
-# --- BUCKET B CONNECTOR: POSTGRESQL PERMANENT STORAGE ---
 def get_postgres_connection():
-    """Establishes a connection to our long-term relational ledger."""
     try:
         conn = psycopg2.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS
+            host="localhost",
+            port=5432,
+            database="fhir_triage",
+            user="user",
+            password="password"
         )
         return conn
     except Exception as e:
-        print(f" CRITICAL ERROR: Could not connect to PostgreSQL Database! Details: {e}")
+        print(f"CRITICAL ERROR: Could not connect to PostgreSQL Database! Details: {e}")
+        return None
+
+def get_redis_connection():
+    try:
+        client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+        return client
+    except Exception as e:
+        print(f"CRITICAL ERROR: Could not connect to Redis! Details: {e}")
         return None

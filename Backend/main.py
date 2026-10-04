@@ -1,14 +1,38 @@
 import os
 import json
-from fastapi import FastAPI # type: ignore
-from pydantic import BaseModel
+from typing import List
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # type: ignore
+from fastapi.staticfiles import StaticFiles  # type: ignore
+from pydantic import BaseModel # type: ignore
 from database import get_postgres_connection, get_redis_connection
 from triage_engine import calculate_news2_score
 from fhir_mapper import convert_telemetry_to_fhir_bundle
 
 app = FastAPI(title="FHIR Triage Core API Engine")
 
-# --- DATA MODELS ---
+# WEBSOCKET CONNECTION MANAGER
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+# DATA MODELS 
 class TelemetryPayload(BaseModel):
     bed_id: str
     heart_rate: int
@@ -16,7 +40,7 @@ class TelemetryPayload(BaseModel):
     spo2: int
     status: str
 
-# --- DATABASE SCHEMA SETUP ---
+#  DATABASE SCHEMA SETUP 
 def initialize_database_schemas():
     conn = get_postgres_connection()
     if conn:
@@ -38,7 +62,17 @@ def initialize_database_schemas():
 async def startup_event():
     initialize_database_schemas()
 
-# --- HEALTH CHECK ENDPOINT ---
+# WEBSOCKET TELEMETRY ENDPOINT
+@app.websocket("/ws/telemetry")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+# HEALTH CHECK ENDPOINT
 @app.get("/api/v1/debug/databases")
 def test_database_health():
     redis_client = get_redis_connection()
@@ -55,7 +89,7 @@ def test_database_health():
         "bucket_b_postgres_historical_vault": pg_status
     }
 
-# --- TELEMETRY INGESTION ENDPOINT ---
+# TELEMETRY INGESTION ENDPOINT 
 @app.post("/api/v1/telemetry")
 async def receive_telemetry(payload: TelemetryPayload):
     # 1. Parse Blood Pressure ("120/80" -> 120 and 80)
@@ -112,7 +146,10 @@ async def receive_telemetry(payload: TelemetryPayload):
             cursor.close()
             pg_conn.close()
         except Exception as e:
-            print(f" PostgreSql Archive Error: {e}")
+            print(f"PostgreSQL Archive Error: {e}")
+
+    # 7. Broadcast live update to all connected UI clients via WebSockets
+    await manager.broadcast(processed_record)
 
     print(f" 🚨 TRIAGE & FHIR STORED [{payload.bed_id}]: {triage_result['triage_priority']} (Score: {triage_result['news2_score']})")
 
@@ -121,7 +158,7 @@ async def receive_telemetry(payload: TelemetryPayload):
         "triage_result": processed_record
     }
 
-# --- REAL-TIME BED STATUS ENDPOINT (REDIS) ---
+# REAL-TIME BED STATUS ENDPOINT (REDIS) 
 @app.get("/api/v1/bed/{bed_id}")
 def get_bed_status(bed_id: str):
     """Fetches real-time cached triage status and FHIR bundle for a bed from Redis."""
@@ -134,7 +171,7 @@ def get_bed_status(bed_id: str):
         return json.loads(data)
     return {"message": f"No telemetry data found in cache for {bed_id}"}
 
-# --- FHIR BUNDLE EXPORTER ENDPOINT ---
+# FHIR BUNDLE EXPORTER ENDPOINT 
 @app.get("/api/v1/bed/{bed_id}/fhir")
 def get_bed_fhir_bundle(bed_id: str):
     """Retrieves standard FHIR Bundle JSON structure for EMR system integration."""
@@ -148,7 +185,7 @@ def get_bed_fhir_bundle(bed_id: str):
         return record.get("fhir_bundle", {})
     return {"message": f"No FHIR data found for {bed_id}"}
 
-# --- HISTORICAL VITALS ENDPOINT (POSTGRESQL) ---
+# HISTORICAL VITALS ENDPOINT (POSTGRESQL)
 @app.get("/api/v1/bed/{bed_id}/history")
 def get_bed_vitals_history(bed_id: str, limit: int = 10):
     """Retrieves the most recent historical vital records from PostgreSQL for plotting clinical trends."""
@@ -191,3 +228,15 @@ def get_bed_vitals_history(bed_id: str, limit: int = 10):
         }
     except Exception as e:
         return {"error": f"Database query failed: {str(e)}"}
+
+# MOUNT STATIC DASHBOARD 
+import os
+from fastapi.staticfiles import StaticFiles # type: ignore
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(BASE_DIR, "static")
+
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir, exist_ok=True)
+
+app.mount("/dashboard", StaticFiles(directory=static_dir, html=True), name="dashboard")

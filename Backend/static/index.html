@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHIR Triage Core - ICU Control Center</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 20px auto; border-bottom: 2px solid #334155; padding-bottom: 15px; }
+        h1 { color: #38bdf8; margin: 0; font-size: 1.8em; }
+        #status-badge { padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 0.85em; background: #64748b; }
+        .status-connected { background: #16a34a !important; color: #ffffff; }
+        .status-disconnected { background: #dc2626 !important; color: #ffffff; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; max-width: 1400px; margin: 0 auto; }
+        .card { background: #1e293b; border-radius: 8px; padding: 15px; border-left: 6px solid #64748b; transition: all 0.3s ease; }
+        .card.GREEN { border-left-color: #22c55e; }
+        .card.YELLOW { border-left-color: #eab308; }
+        .card.RED { border-left-color: #ef4444; background: #450a0a; animation: pulse 1.5s infinite; }
+        .bed-id { font-weight: bold; font-size: 1.1em; color: #f1f5f9; }
+        .vital { font-size: 0.9em; margin: 4px 0; color: #94a3b8; }
+        .vital span { font-weight: bold; color: #f8fafc; }
+        .score { font-size: 0.85em; font-weight: bold; margin-top: 8px; padding: 4px; border-radius: 4px; text-align: center; }
+        .bg-GREEN { background: #15803d; } .bg-YELLOW { background: #a16207; } .bg-RED { background: #991b1b; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏥 Live ICU Triage Telemetry Dashboard</h1>
+        <div id="status-badge">Connecting...</div>
+    </div>
+    
+    <div class="grid" id="bed-grid"></div>
+
+    <script>
+        const grid = document.getElementById('bed-grid');
+        const statusBadge = document.getElementById('status-badge');
+        const beds = {};
+
+        // Generate 50 bed placeholders
+        for (let i = 1; i <= 50; i++) {
+            const bedId = `BED-${String(i).padStart(3, '0')}`;
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.id = bedId;
+            card.innerHTML = `
+                <div class="bed-id">${bedId}</div>
+                <div class="vital">HR: <span id="hr-${bedId}">--</span> bpm</div>
+                <div class="vital">BP: <span id="bp-${bedId}">--</span></div>
+                <div class="vital">SpO2: <span id="spo2-${bedId}">--</span>%</div>
+                <div class="score" id="score-${bedId}">WAITING DATA</div>
+            `;
+            grid.appendChild(card);
+            beds[bedId] = card;
+        }
+
+        function connectWebSocket() {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws/telemetry`;
+            console.log("Connecting to WebSocket:", wsUrl);
+            
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log("WebSocket Connection Established!");
+                statusBadge.innerText = "LIVE STREAM ACTIVE";
+                statusBadge.className = "status-connected";
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const card = beds[data.bed_id];
+                    if (!card) return;
+
+                    const priorityClass = data.triage_priority.startsWith('RED') ? 'RED' : 
+                                          data.triage_priority.startsWith('YELLOW') ? 'YELLOW' : 'GREEN';
+
+                    card.className = `card ${priorityClass}`;
+                    document.getElementById(`hr-${data.bed_id}`).innerText = data.heart_rate;
+                    document.getElementById(`bp-${data.bed_id}`).innerText = data.blood_pressure;
+                    document.getElementById(`spo2-${data.bed_id}`).innerText = data.spo2;
+                    
+                    const scoreBadge = document.getElementById(`score-${data.bed_id}`);
+                    scoreBadge.className = `score bg-${priorityClass}`;
+                    scoreBadge.innerText = `NEWS2: ${data.news2_score}`;
+                } catch (err) {
+                    console.error("Error parsing telemetry payload:", err);
+                }
+            };
+
+            ws.onclose = () => {
+                console.warn("WebSocket disconnected. Retrying in 3 seconds...");
+                statusBadge.innerText = "DISCONNECTED - RETRYING";
+                statusBadge.className = "status-disconnected";
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+                ws.close();
+            };
+        }
+
+        // Initialize connection on page load
+        connectWebSocket();
+    </script>
+</body>
+</html>
